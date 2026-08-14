@@ -1,8 +1,35 @@
 import os
 import json
 import time
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import firebase_admin
 from firebase_admin import credentials, messaging, firestore
+
+# ============================================================
+# TRUCO PARA RENDER (Web Service Free)
+# Abre un servidor HTTP dummy para satisfacer la comprobación de puerto
+# ============================================================
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"Servicio Notificador ESP32 Activo en Render")
+
+    # Silenciar logs HTTP en consola para no llenar el historial de Render
+    def log_message(self, format, *args):
+        return
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
+    print(f">>> [SERVIDOR WEB] Escuchando en el puerto {port} para Render. <<<")
+    server.serve_forever()
+
+# Iniciar servidor web en segundo plano
+threading.Thread(target=run_web_server, daemon=True).start()
+# ============================================================
 
 # 1. Obtener Credenciales de Firebase desde la Variable de Entorno o un Archivo Local
 creds_env = os.environ.get('FIREBASE_CREDENTIALS_JSON')
