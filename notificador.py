@@ -8,7 +8,7 @@ from firebase_admin import credentials, messaging, firestore
 
 # ============================================================
 # TRUCO PARA RENDER (Web Service Free)
-# Abre un servidor HTTP dummy para satisfacer la comprobación de puerto
+# Servidor HTTP para satisfacer la comprobación de puerto y aceptar POST
 # ============================================================
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -16,6 +16,49 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-type", "text/html")
         self.end_headers()
         self.wfile.write(b"Servicio Notificador ESP32 Activo en Render")
+
+    def do_POST(self):
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        try:
+            datos = json.loads(post_data.decode('utf-8'))
+            fecha = datos.get('fecha_hora', datos.get('Fecha_Hora', 'Hora no registrada'))
+            dispositivo_id = datos.get('dispositivo_id', 'Desconocido')
+            
+            print(f"\n[!] ¡ALERTA RECIBIDA POR POST DE ESP32! ID: {dispositivo_id} ({fecha})")
+            print(" -> Despachando Notificación Push a Google FCM...")
+
+            # Construcción del Mensaje Push de Alta Prioridad
+            mensaje = messaging.Message(
+                topic='movimiento',
+                notification=messaging.Notification(
+                    title='¡ALERTA DE SEGURIDAD!',
+                    body=f'Movimiento detectado: {fecha}'
+                ),
+                android=messaging.AndroidConfig(
+                    priority='high',
+                    notification=messaging.AndroidNotification(
+                        sound='alarma',
+                        channel_id='canal_alarmas_pir',
+                        priority='max'
+                    )
+                )
+            )
+
+            respuesta = messaging.send(mensaje)
+            print(f" -> ¡Notificación Push enviada con éxito! ID: {respuesta}")
+
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "fcm_id": respuesta}).encode('utf-8'))
+
+        except Exception as e:
+            print(f" -> Error al procesar POST o enviar Notificación Push: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
 
     # Silenciar logs HTTP en consola para no llenar el historial de Render
     def log_message(self, format, *args):
@@ -53,56 +96,8 @@ db = firestore.client()
 
 print("=" * 60)
 print("  SERVICIO DE NOTIFICACIONES PUSH ACTIVO - MODO NUBE / SPARK")
-print("  Monitoreando la Colección 'alertas' en Tiempo Real...")
+print("  Esperando peticiones POST del ESP32...")
 print("=" * 60)
-
-# Variable para ignorar Alertas Antiguas Cargadas al Iniciar
-escucha_inicial = True
-
-def al_recibir_alerta(doc_snapshot, changes, read_time):
-    global escucha_inicial
-    
-    # En la primera carga ignoramos los documentos existentes para no duplicar alertas viejas
-    if escucha_inicial:
-        escucha_inicial = False
-        return
-
-    for change in changes:
-        # Solo reaccionamos cuando el ESP32 inserta un Documento NUEVO
-        if change.type.name == 'ADDED':
-            doc = change.document
-            datos = doc.to_dict()
-            fecha = datos.get('Fecha_Hora', 'Hora no registrada')
-            
-            print(f"\n[!] ¡NUEVO MOVIMIENTO DETECTADO POR ESP32! ({fecha})")
-            print(" -> Despachando Notificación Push a Google FCM...")
-
-            # Construcción del Mensaje Push de Alta Prioridad
-            mensaje = messaging.Message(
-                topic='movimiento',
-                notification=messaging.Notification(
-                    title='¡ALERTA DE SEGURIDAD!',
-                    body=f'Movimiento detectado: {fecha}'
-                ),
-                android=messaging.AndroidConfig(
-                    priority='high',
-                    notification=messaging.AndroidNotification(
-                        sound='alarma',
-                        channel_id='canal_alarmas_pir',
-                        priority='max'
-                    )
-                )
-            )
-
-            try:
-                respuesta = messaging.send(mensaje)
-                print(f" -> ¡Notificación Push enviada con éxito! ID: {respuesta}")
-            except Exception as e:
-                print(f" -> Error al enviar Notificación Push: {e}")
-
-# Escuchar la Colección 'alertas' en Tiempo Real
-col_query = db.collection('alertas')
-query_watch = col_query.on_snapshot(al_recibir_alerta)
 
 # Mantener el proceso vivo 24/7
 while True:
