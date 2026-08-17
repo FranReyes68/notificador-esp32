@@ -39,21 +39,17 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             except Exception as db_err:
                 print(f" -> Error al guardar en Firestore: {db_err}")
 
-            # 2. Despachar Notificación Push de Alta Prioridad a Google FCM
+            # 2. Despachar Notificación Push de Alta Prioridad a Google FCM (Solo Data)
             print(" -> Despachando Notificación Push a Google FCM...")
             mensaje = messaging.Message(
                 topic='movimiento',
-                notification=messaging.Notification(
-                    title='¡ALERTA DE SEGURIDAD!',
-                    body=f'Movimiento detectado: {fecha}'
-                ),
+                data={
+                    'title': '¡ALERTA DE SEGURIDAD!',
+                    'body': f'Movimiento detectado: {fecha}',
+                    'dispositivo_id': str(dispositivo_id)
+                },
                 android=messaging.AndroidConfig(
-                    priority='high',
-                    notification=messaging.AndroidNotification(
-                        sound='alarma',
-                        channel_id='canal_alarmas_pir',
-                        priority='max'
-                    )
+                    priority='high'
                 )
             )
 
