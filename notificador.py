@@ -26,9 +26,21 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             dispositivo_id = datos.get('dispositivo_id', 'Desconocido')
             
             print(f"\n[!] ¡ALERTA RECIBIDA POR POST DE ESP32! ID: {dispositivo_id} ({fecha})")
-            print(" -> Despachando Notificación Push a Google FCM...")
+            
+            # 1. Registrar la Alerta en Firestore (para el Historial de la App)
+            try:
+                db.collection('alertas').add({
+                    'Dispositivo_ID': dispositivo_id,
+                    'Fecha_Hora': fecha,
+                    'Evento': 'Movimiento detectado',
+                    'Timestamp': firestore.SERVER_TIMESTAMP
+                })
+                print(" -> ¡Alerta registrada exitosamente en Firestore!")
+            except Exception as db_err:
+                print(f" -> Error al guardar en Firestore: {db_err}")
 
-            # Construcción del Mensaje Push de Alta Prioridad
+            # 2. Despachar Notificación Push de Alta Prioridad a Google FCM
+            print(" -> Despachando Notificación Push a Google FCM...")
             mensaje = messaging.Message(
                 topic='movimiento',
                 notification=messaging.Notification(
@@ -54,7 +66,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "ok", "fcm_id": respuesta}).encode('utf-8'))
 
         except Exception as e:
-            print(f" -> Error al procesar POST o enviar Notificación Push: {e}")
+            print(f" -> Error general procesando POST: {e}")
             self.send_response(500)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
